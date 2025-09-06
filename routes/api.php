@@ -35,9 +35,11 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     Route::get('/notes', [NoteController::class, 'index']);
     Route::get('/notes/{note}', [NoteController::class, 'show']);
     Route::middleware('throttle:notes-write')->group(function () {
-        Route::post('/notes', [NoteController::class, 'store']);
-        Route::put('/notes/{note}', [NoteController::class, 'update']);
-        Route::delete('/notes/{note}', [NoteController::class, 'destroy']);
+        // Route::post('/notes', [NoteController::class, 'store']);
+        // Route::put('/notes/{note}', [NoteController::class, 'update']);
+        // Route::delete('/notes/{note}', [NoteController::class, 'destroy']);
+        Route::apiResource('notes', \App\Http\Controllers\NoteController::class);
+        Route::post('/notes/{id}/restore', [\App\Http\Controllers\NoteController::class, 'restore']);
     });
 });
 

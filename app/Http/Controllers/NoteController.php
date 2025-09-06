@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Note;
+use App\Services\SyncNoteTags;
 use Illuminate\Http\Request;
 use App\Http\Resources\NoteResource;
 use Illuminate\Support\Facades\Auth;
@@ -19,11 +20,26 @@ class NoteController extends Controller
     {
         $limit = min($r->integer('limit', 25), 100);
         $query = trim((string) $r->query('query', ''));
-        $note = $r->user()->notes()
-            ->when($query !== '', fn($x) => $x->where(fn($y) => $y->where('title', 'like', "%$query%")))
-            ->latest()
+        $tag = trim((string) $r->query('tag', ''));
+        $from = $r->date('from');
+        $to = $r->date('to');
+        $sort = (string) $r->query('sort', '-created_at');
+
+        $notes = $r->user()->notes()
+            ->with('tags')
+            ->when($query !== '', fn($x) => $x->where(fn($y) =>
+                $y->where('title', 'like', "%$query%")->orWhere('body', 'like', "%$query%")))
+            ->when($tag !== '', fn($x) => $x->whereHas('tags', fn($t) =>
+                $t->where('name', mb_strtolower($tag))))
+            ->when($from, fn($x) => $x->whereDate('created_at', '>=', $from))
+            ->when($to, fn($x) => $x->whereDate('created_at', '<=', $to))
+            ->when($sort, function ($x) use ($sort) {
+                $dir = str_starts_with($sort, '-') ? 'desc' : 'asc';
+                $col = ltrim($sort, '-');
+                return $x->orderBy($col, $dir);
+            }, fn($x) => $x->latest())
             ->paginate($limit);
-        return NoteResource::collection($note);
+        return NoteResource::collection($notes);
     }
 
     /**
@@ -41,9 +57,8 @@ class NoteController extends Controller
     {
 
         $note = Auth::user()->notes()->create($request->validated());
-
+        SyncNoteTags::handle($note, $request->validated()['tags'] ?? []);
         return (new NoteResource($note))->response()->setStatusCode(201);
-
 
     }
 
@@ -52,8 +67,9 @@ class NoteController extends Controller
      */
     public function show(Note $note)
     {
+
         $this->authorize('view', $note);
-        return new NoteResource($note);
+        return new NoteResource($note->load('tags'));
     }
 
     /**
@@ -71,11 +87,21 @@ class NoteController extends Controller
     {
         $this->authorize('update', $note);
 
-
         $note->update($request->validated());
-        return new NoteResource($note);
+        SyncNoteTags::handle($note, $request->validated()['tags'] ?? []);
+        return new NoteResource($note->load('tags'));
     }
 
+
+    public function restore($id, Request $r)
+    {
+        $note = Note::onlyTrashed()->findOrFail($id);
+        $this->authorize('update', $note);
+        // owner check via policy still applies if you add it to handle trashed (optional)
+        $note->restore();
+        return new NoteResource($note->fresh('tags'));
+
+    }
 
     /**
      * Remove the specified resource from storage.

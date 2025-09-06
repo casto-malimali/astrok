@@ -59,3 +59,33 @@ it('blocks IDOR via policy', function () {
     $this->getJson("/api/notes/{$note->id}")
         ->assertStatus(403);
 });
+
+it('filters by tag and q and sorts', function () {
+    $me = \App\Models\User::factory()->create();
+    \Laravel\Sanctum\Sanctum::actingAs($me);
+
+    $a = $me->notes()->create(['title' => 'Alpha note', 'body' => 'hello world']);
+    $b = $me->notes()->create(['title' => 'Beta note', 'body' => 'another hello']);
+    \App\Services\SyncNoteTags::handle($a, ['work']);
+    \App\Services\SyncNoteTags::handle($b, ['home']);
+
+    $this->getJson('/api/notes?tag=work&q=hello&sort=title')
+        ->assertOk()
+        ->assertJsonFragment(['title' => 'Alpha note'])
+        ->assertJsonMissing(['title' => 'Beta note']);
+});
+
+it('soft deletes and restores', function () {
+    $me = \App\Models\User::factory()->create();
+    \Laravel\Sanctum\Sanctum::actingAs($me);
+
+    $n = $me->notes()->create(['title' => 'To delete', 'body' => 'b']);
+    $this->deleteJson("/api/notes/{$n->id}")->assertNoContent();
+
+    // should be gone from normal list
+    $this->getJson('/api/notes')->assertOk()->assertJsonMissing(['title' => 'To delete']);
+
+    // restore
+    $this->postJson("/api/notes/{$n->id}/restore")->assertOk()
+        ->assertJsonFragment(['title' => 'To delete']);
+});
