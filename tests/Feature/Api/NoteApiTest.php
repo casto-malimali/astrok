@@ -1,9 +1,17 @@
 <?php
 
-use Illuminate\Foundation\Testing\RefreshDatabase;
-use Laravel\Sanctum\Sanctum;
-use App\Models\User;
 use App\Models\Note;
+use App\Models\User;
+use App\Models\Attachment;
+use Laravel\Sanctum\Sanctum;
+use App\Mail\NoteCreatedMail;
+use App\Services\SyncNoteTags;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Facades\Storage;
+use App\Jobs\GenerateAttachmentThumbnail;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
 
@@ -88,4 +96,40 @@ it('soft deletes and restores', function () {
     // restore
     $this->postJson("/api/notes/{$n->id}/restore")->assertOk()
         ->assertJsonFragment(['title' => 'To delete']);
+});
+
+it('uploads an attachment privately and queues a thumbnail', function () {
+    Storage::fake('private');
+    Queue::fake();
+
+    $me = \App\Models\User::factory()->create();
+    Sanctum::actingAs($me);
+
+    $note = $me->notes()->create(['title' => 'Has file', 'body' => '...']);
+
+    $file = UploadedFile::fake()->image('photo.jpg', 800, 600);
+    $res = $this->postJson("/api/notes/{$note->id}/attachments", ['file' => $file]);
+
+    $res->assertCreated()->assertJsonStructure(['id', 'download_url']);
+    $attId = $res->json('id');
+
+    // File stored
+    $att = \App\Models\Attachment::find($attId);
+    $this->assertTrue(Storage::disk('private')->exists($att->path));
+
+    // Job queued
+    Queue::assertPushed(GenerateAttachmentThumbnail::class, fn($job) => $job->attachment->id === $attId);
+});
+
+it('sends an email on note creation', function () {
+    Mail::fake();
+
+    $me = \App\Models\User::factory()->create();
+    Sanctum::actingAs($me);
+
+    $this->postJson('/api/notes', ['title' => 'Mail me', 'body' => 'test'])->assertCreated();
+
+    Mail::assertQueued(NoteCreatedMail::class, function ($m) use ($me) {
+        return $m->hasTo($me->email);
+    });
 });

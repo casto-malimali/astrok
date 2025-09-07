@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\AttachmentController;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -41,7 +42,15 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
         Route::apiResource('notes', \App\Http\Controllers\NoteController::class);
         Route::post('/notes/{id}/restore', [\App\Http\Controllers\NoteController::class, 'restore']);
     });
+    Route::post('/notes/{note}/attachments', [AttachmentController::class, 'store']);
+    // Route::get('/attachments/{attachment}/download', [AttachmentController::class, 'download'])
+    //     ->middleware('signed'); // signed URL required
+    Route::get('/attachments/{attachment}/download', [\App\Http\Controllers\AttachmentController::class, 'download'])
+        ->middleware('signed')
+        ->name('attachments.download');
+    Route::delete('/attachments/{attachment}', [AttachmentController::class, 'destroy']);
 });
+
 
 
 

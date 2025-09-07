@@ -10,6 +10,10 @@ use Illuminate\Support\Facades\Auth;
 use App\Http\Requests\StoreNoteRequest;
 use App\Http\Requests\UpdateNoteRequest;
 
+//For Email
+use Illuminate\Support\Facades\Mail;
+use App\Mail\NoteCreatedMail;
+
 class NoteController extends Controller
 {
     use \Illuminate\Foundation\Auth\Access\AuthorizesRequests;
@@ -39,7 +43,7 @@ class NoteController extends Controller
                 return $x->orderBy($col, $dir);
             }, fn($x) => $x->latest())
             ->paginate($limit);
-        return NoteResource::collection($notes);
+        return NoteResource::collection($notes->load('attachments'));
     }
 
     /**
@@ -58,6 +62,8 @@ class NoteController extends Controller
 
         $note = Auth::user()->notes()->create($request->validated());
         SyncNoteTags::handle($note, $request->validated()['tags'] ?? []);
+
+        Mail::to(Auth::user()->email)->queue(new NoteCreatedMail($note));
         return (new NoteResource($note))->response()->setStatusCode(201);
 
     }
@@ -89,7 +95,7 @@ class NoteController extends Controller
 
         $note->update($request->validated());
         SyncNoteTags::handle($note, $request->validated()['tags'] ?? []);
-        return new NoteResource($note->load('tags'));
+        return new NoteResource($note->load('tags', 'attachments'));
     }
 
 
