@@ -133,3 +133,35 @@ it('sends an email on note creation', function () {
         return $m->hasTo($me->email);
     });
 });
+
+
+it('forbids write when token lacks ability', function () {
+    $me = User::factory()->create();
+    Sanctum::actingAs($me, ['notes:read']); // read-only
+
+    $this->postJson('/api/v1/notes', ['title' => 'X', 'body' => 'Y'])
+        ->assertStatus(403); // blocked by abilities:notes:write
+});
+
+it('allows read with read-only ability', function () {
+    $me = User::factory()->create();
+    $me->notes()->create(['title' => 'A', 'body' => 'B']);
+
+    Sanctum::actingAs($me, ['notes:read']); // read-only
+    $this->getJson('/api/v1/notes')->assertOk()
+        ->assertJsonFragment(['title' => 'A']);
+});
+
+it('admin route blocked for non-admin', function () {
+    $me = User::factory()->create(['is_admin' => false]);
+    Sanctum::actingAs($me, ['notes:read', 'notes:write']);
+
+    $this->getJson('/api/v1/admin/users')->assertStatus(403);
+});
+
+it('admin route allowed for admin with admin ability', function () {
+    $admin = User::factory()->create(['is_admin' => true]);
+    Sanctum::actingAs($admin, ['admin', 'notes:read', 'notes:write']);
+
+    $this->getJson('/api/v1/admin/users')->assertOk();
+});

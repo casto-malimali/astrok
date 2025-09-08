@@ -40,5 +40,10 @@ class AppServiceProvider extends ServiceProvider
         //For Notes
         RateLimiter::for('notes-write', fn($req) => [Limit::perMinute(30)->by("u:" . optional($req->user())->id ?? $req->ip())]);
 
+        RateLimiter::for(
+            'login',
+            fn($request) =>
+            Limit::perMinute(10)->by($request->ip())
+        );
     }
 }
